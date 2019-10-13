@@ -1,0 +1,69 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.pyplot import *
+from astropy.utils.data import get_pkg_data_filename
+from astropy.table import Table
+from astropy.io import fits
+import glob
+import batman
+import lmfit
+import corner
+
+# directory='/Users/annaburkholder/exp_det_scripts/visit23_defringed/'
+# directory='/home/ian/Desktop/WebbData/visit23_defringed/'
+directory='/visit23_defringed/' #Change directory to proper location
+number_of_images=43
+
+#Load images into a list
+list=glob.glob(directory+"*.fits")
+#print, first image in list
+print(list[0])
+####Example load first fits image
+hdul=fits.open(list[1])
+#Get MJD mid time of exposure from Header, which has start and end MJD times
+mjd_start=hdul[0].header['EXPSTART']
+mjd_end=hdul[0].header['EXPEND']
+mjd=(mjd_end+mjd_start)/2.
+#maybe no period?
+print(mjd)
+
+#load fits file image into an array called 'data'
+data = hdul[0].data
+data.shape  	#size of image
+data.dtype.name #type of image
+print(np.sum(data)) #total counts in image
+
+#close fits after loading in data needed
+hdul.close()
+
+#load all fits images
+#Arrays created for MJD time, and the white light curve total_counts
+index_of_images=np.arange(number_of_images) 
+mjd=np.zeros((number_of_images))
+total_countsPixel=np.zeros((number_of_images)) #Collects the photon count of the aperture, without factoring in subpixels
+total_countsSubPixel=np.zeros((number_of_images)) #Collects the photon count of the aperture, factoring in subpixels
+
+
+for i in index_of_images:
+	img=list[i]
+	print(img)
+	hdul=fits.open(img)
+	mjd_start=hdul[0].header['EXPSTART']
+	mjd_end=hdul[0].header['EXPEND']
+	mjd_image=(mjd_end+mjd_start)/2.
+	mjd[i]=mjd_image
+	print(mjd[i])
+	data = hdul[0].data
+	print(np.sum(data)) #total counts in image
+	MinusSubPixel=np.sum(data[59-7,0:1024]*0.1) #Add the subpixels along the row below the lower aperture threshold
+	PlusSubPixel=np.sum(data[59+7,0:1024]*0.1) #Add the subpixels along the row above the upper aperture threshold
+	total_countsSubPixel[i]=np.sum(data[59-6:59+6,0:1024])+MinusSubPixel+PlusSubPixel #total counts in 12 pix wide aperature around pixel 59 in image, including subpixels
+	total_countsPixel[i]=np.sum(data[59-6:59+6,0:1024])
+  
+
+  
+#Print out the total error for the full pixel and subpixel sums respectively to compare
+total_errorPixel=np.sqrt(total_countsPixel)
+print(total_errorPixel)
+total_errorSubPixel=np.sqrt(total_countsSubPixel)
+print(total_errorSubPixel)
