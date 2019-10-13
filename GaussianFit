@@ -1,0 +1,123 @@
+# import packages to use
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.pyplot import *
+from astropy.utils.data import get_pkg_data_filename
+from astropy.table import Table
+from astropy.io import fits
+from scipy.optimize import curve_fit
+from scipy import asarray as ar,exp
+import glob
+import batman
+import lmfit
+import corner
+
+import matplotlib.pyplot as plt
+from matplotlib import pylab
+from numpy import arange,array,ones
+from scipy import stats
+import numpy.polynomial.polynomial as poly
+from scipy.optimize import curve_fit, minimize_scalar
+
+
+directory='/home/ian/Desktop/WebbData/visit23_defringed/'
+#directory='/Users/annaburkholder/exp_det_scripts/visit23_defringed/'
+number_of_rows=64
+number_of_columns=1024
+number_of_images=43
+ 
+#Load images into a list
+
+list=glob.glob(directory+"*.fits")
+
+#print, first image in list
+
+print(list[0])
+
+##Example load first fits image
+
+hdul=fits.open(list[1])
+
+#Get MJD mid time of exposure from Header, which has start and end MJD times
+
+mjd_start=hdul[0].header['EXPSTART']
+mjd_end=hdul[0].header['EXPEND']
+mjd=(mjd_end+mjd_start)/2.
+print(mjd)
+ 
+#load fits file image into an array called 'data'
+
+data = hdul[0].data
+data.shape  	#size of image
+data.dtype.name #type of image
+print(np.sum(data)) #total counts in image
+ 
+#close fits after loading in data needed
+
+hdul.close()
+ 
+ 
+index_of_images=np.arange(number_of_images)
+index_of_rows=np.arange(number_of_rows)
+index_of_columns=np.arange(number_of_columns)
+total_counts=np.zeros((number_of_images))
+mjd=np.zeros((number_of_images))
+row_sum=np.zeros(number_of_rows)	#sums pixel count for each row of image
+maxRow=np.zeros(number_of_columns)  #number of row in which max count exists in cols
+col_vals=np.zeros(number_of_columns)
+
+
+col_max=np.zeros(number_of_columns) #to contain max photon count per column in an image
+col_posn_max=np.zeros(number_of_columns) #to contain position of max photon count per column in an image
+col_max_posn=np.zeros((number_of_images, number_of_columns)) #contains all column pc among all images
+col_max_value=np.zeros((number_of_images, number_of_columns)) #contains all position pc among all images
+gauss_max_value=np.zeros((number_of_images, number_of_columns))
+gauss_max_posn=np.zeros((number_of_images, number_of_columns))
+
+col_gauss = np.zeros(number_of_rows) #Create arrays for gaussian fits
+col_test= data[0:64,30]
+x = np.arange(0,64)
+y = col_gauss
+def Gauss(x, a, x0, sigma): return a * np.exp(-(x - x0)**2 / (2 * sigma**2))
+
+for i in index_of_images:
+	img=list[i]
+	#print(img)
+	hdul=fits.open(img)
+	mjd_start=hdul[0].header['EXPSTART']
+	mjd_end=hdul[0].header['EXPEND']
+	mjd_image=(mjd_end+mjd_start)/2.
+	mjd[i]=mjd_image
+	data = hdul[0].data
+	#print(np.sum(data)) #total counts in image
+	for j in index_of_columns:
+    	#total_counts[i]=np.sum(data[0:64,j]) #total counts in column j of image
+    	col_gauss = data[0:64,j]
+    	mean = sum(x * col_gauss) / sum(col_gauss)
+    	sigma = np.sqrt(sum(col_gauss * (x - mean)**2) / sum(col_gauss))
+    	popt,pcov = curve_fit(Gauss, x, col_gauss, p0=[max(y), mean, sigma])
+    	col_posn_max[j]=np.argmax(Gauss(x, *popt))
+    	col_max[j]=np.max(Gauss(x, *popt))
+   	 
+    	#fm = lambda x: -Gauss(x, *popt)
+    	#r = minimize_scalar(fm, bounds=(1, 128))
+    	#print("maximum:", Gauss(r["x"], *popt))
+    	gmv=popt[0]
+    	gmp=popt[1]
+    	gauss_max_value[i][j]=gmv
+    	gauss_max_posn[i][j]=gmp
+   	 
+   	 
+	#print(total_counts)
+   #print(row_vals)     	#prints array for each image w/ max photon count per column
+	#col_max_posn[i]=total_counts
+    
+	#col_max_value[i]=col_max
+	#print(col_max_value)
+    
+	#col_max_posn[i]=col_posn_max
+	#print(col_max_posn)
+    
+	print(gauss_max_value[i])
+	print(gauss_max_posn[i])
