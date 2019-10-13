@@ -1,0 +1,114 @@
+# import packages to use
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.pyplot import *
+from astropy.utils.data import get_pkg_data_filename
+from astropy.table import Table
+from astropy.io import fits
+import glob
+import batman
+import lmfit
+import corner
+
+import matplotlib.pyplot as plt
+from matplotlib import pylab
+from numpy import arange,array,ones
+from scipy import stats
+
+
+# directory='/Users/annaburkholder/exp_det_scripts/visit23_defringed/'
+# directory='/home/ian/Desktop/WebbData/visit23_defringed/'
+directory='/visit23_defringed/' #Change directory to proper location
+number_of_rows=64
+number_of_columns=1024
+number_of_images=43
+ 
+#Load images into a list
+list=glob.glob(directory+"*.fits")
+
+#print, first image in list
+print(list[0])
+
+##Example load first fits image
+hdul=fits.open(list[1])
+
+#Get MJD mid time of exposure from Header, which has start and end MJD times
+mjd_start=hdul[0].header['EXPSTART']
+mjd_end=hdul[0].header['EXPEND']
+mjd=(mjd_end+mjd_start)/2.
+print(mjd)
+ 
+#load fits file image into an array called 'data'
+data = hdul[0].data
+data.shape  	#size of image
+data.dtype.name #type of image
+print(np.sum(data)) #total counts in image
+ 
+#close fits after loading in data needed
+hdul.close()
+
+index_of_images=np.arange(number_of_images)
+index_of_rows=np.arange(number_of_rows)
+index_of_columns=np.arange(number_of_columns)
+total_counts=np.zeros((number_of_images))
+
+row_sum=np.zeros(number_of_rows) #sums pixel count for each row of image
+maxRow=np.zeros(number_of_columns)  #number of row in which max count exists in cols
+col_vals=np.zeros(number_of_columns) #
+
+
+col_max=np.zeros(number_of_columns) #to contain max photon count per column in an image
+col_posn_max=np.zeros(number_of_columns) #to contain position of max photon count per column in an image
+col_max_posn=np.zeros((number_of_images, number_of_columns)) #contains all column pc among all images
+col_max_value=np.zeros((number_of_images, number_of_columns)) #contains all position pc among all images
+ 
+for i in index_of_images:
+	img=list[i]
+	#print(img)
+	hdul=fits.open(img)
+	data = hdul[0].data
+	#print(np.sum(data)) #total counts in image
+	for j in index_of_columns:
+    	#total_counts[i]=np.sum(data[0:64,j]) #total counts in column j of image
+    	col_posn_max[j]=np.argmax(data[0:64,j])
+    	col_max[j]=max(data[0:64,j])
+   	 
+	#print(total_counts)
+   # print(row_vals)     	#prints array for each image w/ max photon count per column
+	#col_max_posn[i]=total_counts
+	col_max_value[i]=col_max
+	print(col_max_value)
+    
+	col_max_posn[i]=col_posn_max
+	print(col_max_posn)
+
+all_linear_lines = np.zeros((number_of_images, number_of_columns)) #collect all fit lines for every image
+
+for i in index_of_images:
+	y=col_max_posn[i]
+	x=index_of_columns
+
+	slope, intercept, r_value, p_value, std_err = stats.linregress(x,y)
+	line = slope*x+intercept
+	all_linear_lines[i]=line
+
+	plt.plot(x,y)
+	pylab.title('Linear Fit of Image 1')
+
+
+print(all_linear_lines)
+
+
+
+
+#Generate a 10th degree polynomial fit
+z = np.polyfit(x, y, 10)
+f = np.poly1d(z)
+
+x_new = np.linspace(x[0], x[-1], 50)
+y_new = f(x_new)
+
+plt.plot(x,y,'o', x_new, y_new)
+plt.xlim([x[0]-1, x[-1] + 1 ])
+plt.show()
