@@ -1,0 +1,70 @@
+# import packages to use
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.pyplot import *
+from astropy.utils.data import get_pkg_data_filename
+from astropy.table import Table
+from astropy.io import fits
+import glob
+import batman
+import lmfit
+import corner
+
+# directory='/Users/annaburkholder/exp_det_scripts/visit23_defringed/'
+# directory='/home/ian/Desktop/WebbData/visit23_defringed/'
+directory='/visit23_defringed/' #Change directory to proper location
+number_of_rows=64
+number_of_columns=1024
+number_of_images=43
+ 
+#Load images into a list
+list=glob.glob(directory+"*.fits")
+
+#print, first image in list
+print(list[0])
+
+##Example load first fits image
+hdul=fits.open(list[1])
+
+#Get MJD mid time of exposure from Header, which has start and end MJD times
+mjd_start=hdul[0].header['EXPSTART']
+mjd_end=hdul[0].header['EXPEND']
+mjd=(mjd_end+mjd_start)/2.
+print(mjd)
+ 
+#load fits file image into an array called 'data'
+data = hdul[0].data
+data.shape  	#size of image
+data.dtype.name #type of image
+print(np.sum(data)) #total counts in image
+ 
+#close fits after loading in data needed
+hdul.close()
+
+index_of_images=np.arange(number_of_images)
+index_of_rows=np.arange(number_of_rows)
+index_of_columns=np.arange(number_of_columns)
+total_counts=np.zeros((number_of_images))
+
+row_sum=np.zeros(number_of_rows)	#sums pixel count for each row of image
+maxRow=np.zeros(number_of_columns)  #position of row of the max photon count for each column
+col_vals=np.zeros(number_of_columns)
+row_vals=np.zeros(number_of_columns)
+ 
+for i in index_of_images:
+	img=list[i]
+	#print(img)
+	hdul=fits.open(img)
+	data = hdul[0].data
+	#print(np.sum(data)) #total counts in image
+	for j in index_of_columns:
+    	total_counts[i]=np.sum(data[0:64,j]) #total counts in column j of image
+    	row_vals[j]=np.argmax(data[0:64,j])
+ 
+	print(row_vals)     	#prints array for each image w/ max photon count per column
+ 
+
+
+
+
+
