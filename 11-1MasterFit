@@ -1,0 +1,545 @@
+# import packages to use
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.pyplot import *
+from astropy.utils.data import get_pkg_data_filename
+from astropy.table import Table
+from astropy.io import fits
+import glob
+import batman
+import lmfit
+import corner
+
+import matplotlib.pyplot as plt
+from matplotlib import pylab
+from numpy import arange,array,ones
+from scipy import stats
+import numpy.polynomial.polynomial as poly
+from scipy.optimize import curve_fit, minimize_scalar
+
+directory='/home/ian/Desktop/WebbData/visit23_defringed/'
+#directory='/Users/insertpathhere/'
+number_of_rows=64
+number_of_columns=1024
+number_of_images=43
+ 
+#Load images into a list
+
+list=glob.glob(directory+"*.fits")
+
+#print, first image in list
+
+print(list[0])
+
+##Example load first fits image
+
+hdul=fits.open(list[1])
+
+#Get MJD mid time of exposure from Header, which has start and end MJD times
+
+mjd_start=hdul[0].header['EXPSTART']
+mjd_end=hdul[0].header['EXPEND']
+mjd=(mjd_end+mjd_start)/2.
+print(mjd)
+ 
+#load fits file image into an array called 'data'
+
+data = hdul[0].data
+data.shape  	#size of image
+data.dtype.name #type of image
+print(np.sum(data)) #total counts in image
+ 
+#close fits after loading in data needed
+
+hdul.close()
+ 
+ 
+index_of_images=np.arange(number_of_images)
+index_of_rows=np.arange(number_of_rows)
+index_of_columns=np.arange(number_of_columns)
+total_counts=np.zeros((number_of_images))
+mjd=np.zeros((number_of_images))
+row_sum=np.zeros(number_of_rows)	#sums pixel count for each row of image
+maxRow=np.zeros(number_of_columns)  #number of row in which max count exists in cols
+col_vals=np.zeros(number_of_columns)
+
+
+col_max=np.zeros(number_of_columns) #to contain max photon count per column in an image
+col_posn_max=np.zeros(number_of_columns) #to contain position of max photon count per column in an image
+col_max_posn=np.zeros((number_of_images, number_of_columns)) #contains all column pc among all images
+col_max_value=np.zeros((number_of_images, number_of_columns)) #contains all position pc among all images
+ 
+gauss_max_value=np.zeros((number_of_images, number_of_columns))
+gauss_max_posn=np.zeros((number_of_images, number_of_columns))
+
+col_gauss = np.zeros(number_of_rows) #Create arrays for gaussian fits
+col_test= data[0:64,30]
+x = np.arange(0,64)
+y = col_gauss
+def Gauss(x, a, x0, sigma): return a * np.exp(-(x - x0)**2 / (2 * sigma**2))    
+    
+for i in index_of_images:
+	img=list[i]
+	#print(img)
+	hdul=fits.open(img)
+	mjd_start=hdul[0].header['EXPSTART']
+	mjd_end=hdul[0].header['EXPEND']
+	mjd_image=(mjd_end+mjd_start)/2.
+	mjd[i]=mjd_image
+	data = hdul[0].data
+	#print(np.sum(data)) #total counts in image
+	for j in index_of_columns:
+    	#total_counts[i]=np.sum(data[0:64,j]) #total counts in column j of image
+    	#col_posn_max[j]=np.argmax(data[0:64,j])
+    	#col_max[j]=max(data[0:64,j])
+    	col_gauss = data[0:64,j]
+    	mean = sum(x * col_gauss) / sum(col_gauss)
+    	sigma = np.sqrt(sum(col_gauss * (x - mean)**2) / sum(col_gauss))
+    	popt,pcov = curve_fit(Gauss, x, col_gauss, p0=[max(y), mean, sigma])
+    	col_posn_max[j]=np.argmax(Gauss(x, *popt))
+    	col_max[j]=np.max(Gauss(x, *popt))
+   	 
+    	gauss_max_value[i][j]=popt[0]
+    	gauss_max_posn[i][j]=popt[1]
+   	 
+   	 
+	#print(total_counts)
+   # print(row_vals)     	#prints array for each image w/ max photon count per column
+	#col_max_posn[i]=total_counts
+    
+	#col_max_value[i]=col_max
+	#print(col_max_value)
+    
+	#col_max_posn[i]=col_posn_max
+	#print(col_max_posn)
+    
+    
+
+all_linear_lines = np.zeros((number_of_images, number_of_columns)) #collect all fit lines for every image
+
+
+for i in index_of_images:
+	y=gauss_max_posn[i]
+	x=index_of_columns
+
+	slope, intercept, r_value, p_value, std_err = stats.linregress(x,y)
+	line = np.around(slope*x+intercept)
+	all_linear_lines[i]=line
+
+
+print(all_linear_lines)
+
+ApertureCountsByRanges = np.zeros((43, 10, 10), dtype=object)
+#ApertureCountsPerImage = np.zeros(43)
+ApertureTotalCounts = 0
+ApertureRangeError = np.zeros((43, 10, 10), dtype=object)
+g = 0
+h = 0
+while (g < 10):
+	g=g+1
+	h=0
+	while (h < 10):
+    	h=h+1
+    	for i in index_of_images:
+        	img=list[i]
+        	hdul=fits.open(img)
+        	data = hdul[0].data
+
+        	for j in index_of_columns:
+            	#print(np.sum(data)) #total counts in image
+            	Col_sum=np.sum(data[int(all_linear_lines[i][j]-[h]):int(all_linear_lines[i][j]+[g]),j]) #total counts in 2 pix wide aperture
+            	ApertureTotalCounts = ApertureTotalCounts+Col_sum
+        	#ApertureCountsPerImage[i] = ApertureTotalCounts
+        	#ApertureCountsByRanges[i][g-1][h-1] =  ApertureCountsPerImage
+        	ApertureCountsByRanges[i][g-1][h-1] = ApertureTotalCounts
+        	ApertureTotalCounts = 0
+        	ApertureRangeError[i][g-1][h-1]=np.sqrt(np.sum(ApertureCountsByRanges))
+    	
+g = 0
+h = 0   
+ppmByRange=np.zeros((10,10))
+
+while (g < 10):
+	h=0
+	while (h < 10):  
+    	for i in index_of_images:
+        	#TRANSIT model batman package https://astro.uchicago.edu/~kreidberg/batman/
+        	#Setup inital parameters (can get from http://exoplanets.org/detail/WASP-39_b)
+        	params = batman.TransitParams()    	#object to store transit parameters
+        	params.t0 = 55342.46880             	#mjd time of inferior conjunction  56368.454950
+        	params.per = 4.0552590            	#orbital period
+        	params.rp = 0.14491                	#planet radius (in units of stellar radii)
+        	params.a = 11.70                  	#semi-major axis (in units of stellar radii)
+        	params.inc = 87.83                	#orbital inclination (in degrees)
+        	params.ecc = 0.                    	#eccentricity
+        	params.w = 90.                     	#longitude of periastron (in degrees)
+        	params.limb_dark = "nonlinear"     	#limb darkening model
+        	params.u = [0.6642, -0.4701, 1.0466,-0.5097]  	#limb darkening coefficients
+        	#>>> dir(params)	#View attributes
+        	#['__class__', '__delattr__', '__dict__', '__doc__', '__format__', '__getattribute__', '__hash__', '__init__', '__module__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', 'a', 'ecc', 'fp', 'inc', 'limb_dark', 'per', 'rp', 't0', 't_secondary', 'u', 'w']
+        	#print(params.rp)
+        	#0.1453
+        	# create a set of Parameters
+        	p = lmfit.Parameters()	#object to store L-M fit Parameters
+        	p.add('rprs', value=params.rp)   # HST phase^4 parameter
+        	p.add('t0', value=params.t0)   # HST phase^4 parameter
+        	p.add('f0', value=10736338.8, min=0 , max=ApertureCountsByRanges[i][1][h]*1.2)	#Baseline Flux
+        	p.add('p1', value=0.0)   # Orbital phase parameter
+        	p.add('p2', value=0.0)   # HST phase^1 parameter
+        	p.add('p3', value=0.00)   # HST phase^4 parameter
+        	p.add('p4', value=0.0)   # HST phase^3 parameter
+        	p.add('p5', value=0.0)   # HST phase^4 parameter
+
+         	#Batman Transit model
+        	t_fine = np.linspace(np.min(mjd), np.max(mjd), 1000) #times at which to calculate light curve
+        	m = batman.TransitModel(params, t_fine) 	#initializes model
+        	transit_fine = m.light_curve(params)    	#Calculates Fine-Grid Tranist model
+
+        	m = batman.TransitModel(params, mjd) 	#initializes model
+        	transit_mjd = m.light_curve(params)    	#Calculates Fine-Grid Tranist model
+
+
+        	#Calculate phase of HST telescope, 96.36 minutes, used for detrending
+        	#phase_hst array values should be between -0.5 and 0.5
+        	phase_hst=(mjd-np.min(mjd))/(6.691666E-2) #phase in days relative to first exposure
+        	phase_hst_fix=np.fix(phase_hst)  	#rounds to nearest zero
+        	phase_hst=phase_hst-phase_hst_fix	#all between 0 to 1.0
+        	phase_hst[np.where(phase_hst > 0.5)]=phase_hst[np.where(phase_hst > 0.5)]-1.0 #all between -0.5 and 0.5
+        	#matplotlib.pyplot.scatter(mjd,phase_hst)  #View
+
+        	#Calculate Orbital Phase
+        	phase=(mjd-params.t0)/(params.per)  #phase in days relative to T0 ephemeris
+        	phase=phase-np.fix(phase[number_of_images-1]) # Have current phase occur at value 0.0
+
+
+        	x=mjd
+        	y=ApertureCountsByRanges[i][g][h]
+        	err=ApertureRangeError[i][g][h]
+
+        	def residual(p):
+            	params.rp = p['rprs'].value            	# Set Batman rprs to new fit rprs
+            	params.t0 = p['t0'].value            	# Set Batman rprs to new fit rprs
+            	m = batman.TransitModel(params, mjd, fac=1E6)   	#initializes model
+            	transit_mjd = m.light_curve(params)    	#Calculates Fine-Grid Tranist model
+            	model=transit_mjd*p['f0'] * (p['p1']*phase + p['p2']*phase_hst + p['p3']*phase_hst**2. + p['p4']*phase_hst**3. + p['p5']*phase_hst**4. + 1.0)          	#Simple transit model is baseline flux X transit model
+            	chi2now=np.sum((y-model)**2/err**2)
+            	#print("current chi^2=",chi2now)
+            	return (y-model)/err
+
+        	def model(p):
+            	params.rp = p['rprs'].value            	# Set Batman rprs to new fit rprs
+            	params.t0 = p['t0'].value            	# Set Batman rprs to new fit rprs
+            	m = batman.TransitModel(params, mjd, fac=1E6)   	#initializes model
+            	transit_mjd = m.light_curve(params)    	#Calculates Fine-Grid Tranist model
+            	model=transit_mjd*p['f0'] * (p['p1']*phase + p['p2']*phase_hst + p['p3']*phase_hst**2. + p['p4']*phase_hst**3. + p['p5']*phase_hst**4. + 1.0)              	#Simple transit model is baseline flux X transit model
+            	return model
+
+        	def model_fine(p):
+            	params.rp = p['rprs'].value            	# Set Batman rprs to new fit rprs
+            	params.t0 = p['t0'].value            	# Set Batman rprs to new fit rprs
+            	m = batman.TransitModel(params, t_fine, fac=1E6)   	#initializes model
+            	transit_mjd = m.light_curve(params)    	#Calculates Fine-Grid Tranist model
+            	model_fine=transit_mjd*p['f0']
+            	return model_fine
+
+        	# create Minimizer
+        	mini = lmfit.Minimizer(residual, p, nan_policy='omit')
+        	# first solve with Nelder-Mead
+        	#out1 = mini.minimize(method='Nelder')
+        	# then solve with Levenberg-Marquardt using the
+        	# Nelder-Mead solution as a starting point
+        	# https://lmfit.github.io/lmfit-py/fitting.html
+        	result = mini.minimize(method='leastsq')
+        	#result = mini.minimize(method='leastsq', params=out1.params)
+        	#print(dir(result))  # To View All Atributes of the
+        	#print("redchi",result.redchi)
+        	#print("chi2",result.chisqr)
+        	#print("nfree",result.nfree)
+        	#print("bic",result.bic)
+        	#print("aic",result.aic)
+        	#print("L-M FIT Variable")
+        	#print(lmfit.fit_report(result.params))
+        	#print(p['f0'].value)
+        	# file-output.py
+
+        	#Update with best-fit parameters
+        	p['rprs'].value=result.params['rprs'].value
+        	p['t0'].value=result.params['t0'].value
+        	p['f0'].value=result.params['f0'].value
+        	p['p1'].value=result.params['p1'].value
+        	p['p2'].value=result.params['p2'].value
+        	p['p3'].value=result.params['p3'].value
+        	p['p4'].value=result.params['p4'].value
+        	p['p5'].value=result.params['p5'].value
+        	# Re-calculate Bestfit Model
+        	final_model=model(p)
+        	final_model_fine=model_fine(p)
+        	#print("residual standard deviation",np.std((y-final_model)/p['f0'].value))
+        	#print("residual standard deviation (ppm)",1E6*np.std((y-final_model)/p['f0'].value))
+        	ppmByRange[g][h]=ppmByRange[g][h]+1E6*np.std((y-final_model)/p['f0'].value)
+        	#ppmByRange[g][h]=currentppm
+        	#Plot data models
+        	#matplotlib.pyplot.scatter(mjd,total_counts, linewidth=1.5)
+        	#plt.errorbar(mjd,total_counts,yerr=ApertureRangeError[g-1][h-1], fmt='o')
+        	#xlabel('MJD')
+        	#ylabel('Counts')
+
+        	#overplot models
+        	#plot(t_fine,final_model_fine, linewidth=1.5)        	#overplot fine-grid Transit model
+        	#matplotlib.pyplot.scatter(mjd,final_model, linewidth=2)  #overplot Transit model at data
+
+        	#show()
+        	#Plot Residuals
+        	#matplotlib.pyplot.scatter(mjd,(y-final_model)/p['f0'].value, linewidth=2)  #overplot Transit model at data
+
+        	#show()
+    	h=h+1
+	print(ppmByRange)
+	g=g+1
+
+
+
+ppmConCat = np.concatenate((ppmByRange[0],ppmByRange[1],ppmByRange[2],ppmByRange[3],ppmByRange[4],ppmByRange[5],ppmByRange[6],ppmByRange[7],ppmByRange[8],ppmByRange[9]), axis=None)
+
+maxvalue = max(ppmConCat)
+print(maxvalue)
+min_value1 = min(ppmConCat)
+min_posn1 = np.argmin(ppmConCat)
+print(min_value1)
+print(min_posn1)
+ppmConCat[min_posn1] = maxvalue
+min_value2 = min(ppmConCat)
+min_posn2 = np.argmin(ppmConCat)
+print(min_value2)
+print(min_posn2)
+ppmConCat[min_posn2] = maxvalue
+min_value3 = min(ppmConCat)
+min_posn3 = np.argmin(ppmConCat)
+print(min_value3)
+print(min_posn3)
+Min3Ranges = np.zeros((3, 2))
+Min3Ranges[0] = [np.floor(min_posn1/10),min_posn1-(np.floor(min_posn1/10)*10)]
+Min3Ranges[1] = [np.floor(min_posn2/10),min_posn2-(np.floor(min_posn2/10)*10)]
+Min3Ranges[2] = [np.floor(min_posn3/10),min_posn3-(np.floor(min_posn3/10)*10)]
+print(Min3Ranges)
+
+MinusSubPixel=0
+PlusSubPixel=0
+SubPixeltotal_counts = np.zeros((43, 10, 10))
+SubPixelError= np.zeros((43, 10, 10))
+Pixeltotal=0
+Minustotal=0
+Plustotal=0
+g = 0
+h = 0
+while (g < 10):
+	g=g+1
+	h=0
+	while (h < 10):
+    	h=h+1
+   	 
+    	for i in index_of_images:
+        	img=list[i]
+        	#print(img)
+        	hdul=fits.open(img)
+        	mjd_start=hdul[0].header['EXPSTART']
+        	mjd_end=hdul[0].header['EXPEND']
+        	mjd_image=(mjd_end+mjd_start)/2.
+        	mjd[i]=mjd_image
+        	#print(mjd[i])
+        	data = hdul[0].data
+        	#print(np.sum(data)) #total counts in image
+       	 
+        	for j in index_of_columns:
+            	#print(np.sum(data)) #total counts in image
+            	Pixel_Sum=np.sum(data[int(all_linear_lines[i][j]-int(Min3Ranges[0][0])):int(all_linear_lines[i][j]+int(Min3Ranges[0][1])),j]) #total counts in 2 pix wide aperture           	 
+            	Pixeltotal=Pixeltotal+Pixel_Sum
+            	MinusSubPixel=np.sum(data[(int(all_linear_lines[i][j])-int(Min3Ranges[0][0])-1),j])*(0.1*g) #Add the subpixels along the row below the lower aperture threshold
+            	Minustotal=Minustotal+MinusSubPixel
+            	PlusSubPixel=np.sum(data[(int(all_linear_lines[i][j])+int(Min3Ranges[0][1])+1),j])*(0.1*h) #Add the subpixels along the row above the upper aperture threshold
+            	Plustotal=Plustotal+PlusSubPixel
+            	#print(MinusSubPixel)
+            	#print(PlusSubPixel)
+            	SubPixelsum=Pixeltotal+Minustotal+Plustotal
+            	#print(Pixeltotal)
+            	#print(PlusSubPixel)
+            	#print(MinusSubPixel)
+           	 
+        	SubPixeltotal_counts[i][g-1][h-1]=SubPixelsum
+        	SubPixelError[i][g-1][h-1]=np.sqrt(np.sum(SubPixeltotal_counts[i][g-1][h-1]))
+       	 
+        	Pixel_Sum=0
+        	MinusSubPixel=0
+        	PlusSubPixel=0
+        	Pixeltotal=0
+        	Minustotal=0
+        	Plustotal=0
+           	 
+           	 
+
+       	 
+    	#print(SubPixeltotal_counts)
+    	print(SubPixelError)
+
+
+
+g = 0
+h = 0   
+ppmByRange2=np.zeros((10,10))
+
+while (g < 10):
+	h=0
+	while (h < 10):  
+    	for i in index_of_images:
+        	#TRANSIT model batman package https://astro.uchicago.edu/~kreidberg/batman/
+        	#Setup inital parameters (can get from http://exoplanets.org/detail/WASP-39_b)
+        	params = batman.TransitParams()    	#object to store transit parameters
+        	params.t0 = 55342.46880             	#mjd time of inferior conjunction  56368.454950
+        	params.per = 4.0552590            	#orbital period
+        	params.rp = 0.14491                	#planet radius (in units of stellar radii)
+        	params.a = 11.70                  	#semi-major axis (in units of stellar radii)
+        	params.inc = 87.83                	#orbital inclination (in degrees)
+        	params.ecc = 0.                    	#eccentricity
+        	params.w = 90.                     	#longitude of periastron (in degrees)
+        	params.limb_dark = "nonlinear"     	#limb darkening model
+        	params.u = [0.6642, -0.4701, 1.0466,-0.5097]  	#limb darkening coefficients
+        	#>>> dir(params)	#View attributes
+        	#['__class__', '__delattr__', '__dict__', '__doc__', '__format__', '__getattribute__', '__hash__', '__init__', '__module__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', 'a', 'ecc', 'fp', 'inc', 'limb_dark', 'per', 'rp', 't0', 't_secondary', 'u', 'w']
+        	#print(params.rp)
+        	#0.1453
+        	# create a set of Parameters
+        	p = lmfit.Parameters()	#object to store L-M fit Parameters
+        	p.add('rprs', value=params.rp)   # HST phase^4 parameter
+        	p.add('t0', value=params.t0)   # HST phase^4 parameter
+        	p.add('f0', value=10736338.8, min=0 , max=SubPixeltotal_counts[i][1][h]*1.2)	#Baseline Flux
+        	p.add('p1', value=0.0)   # Orbital phase parameter
+        	p.add('p2', value=0.0)   # HST phase^1 parameter
+        	p.add('p3', value=0.00)   # HST phase^4 parameter
+        	p.add('p4', value=0.0)   # HST phase^3 parameter
+        	p.add('p5', value=0.0)   # HST phase^4 parameter
+
+         	#Batman Transit model
+        	t_fine = np.linspace(np.min(mjd), np.max(mjd), 1000) #times at which to calculate light curve
+        	m = batman.TransitModel(params, t_fine) 	#initializes model
+        	transit_fine = m.light_curve(params)    	#Calculates Fine-Grid Tranist model
+
+        	m = batman.TransitModel(params, mjd) 	#initializes model
+        	transit_mjd = m.light_curve(params)    	#Calculates Fine-Grid Tranist model
+
+
+        	#Calculate phase of HST telescope, 96.36 minutes, used for detrending
+        	#phase_hst array values should be between -0.5 and 0.5
+        	phase_hst=(mjd-np.min(mjd))/(6.691666E-2) #phase in days relative to first exposure
+        	phase_hst_fix=np.fix(phase_hst)  	#rounds to nearest zero
+        	phase_hst=phase_hst-phase_hst_fix	#all between 0 to 1.0
+        	phase_hst[np.where(phase_hst > 0.5)]=phase_hst[np.where(phase_hst > 0.5)]-1.0 #all between -0.5 and 0.5
+        	#matplotlib.pyplot.scatter(mjd,phase_hst)  #View
+
+        	#Calculate Orbital Phase
+        	phase=(mjd-params.t0)/(params.per)  #phase in days relative to T0 ephemeris
+        	phase=phase-np.fix(phase[number_of_images-1]) # Have current phase occur at value 0.0
+
+
+        	x=mjd
+        	y=SubPixeltotal_counts[i][g][h]
+        	err=SubPixelError[i][g][h]
+
+   
+       	 
+        	def residual(p):
+            	params.rp = p['rprs'].value            	# Set Batman rprs to new fit rprs
+            	params.t0 = p['t0'].value            	# Set Batman rprs to new fit rprs
+            	m = batman.TransitModel(params, mjd, fac=1E6)   	#initializes model
+            	transit_mjd = m.light_curve(params)    	#Calculates Fine-Grid Tranist model
+            	model=transit_mjd*p['f0'] * (p['p1']*phase + p['p2']*phase_hst + p['p3']*phase_hst**2. + p['p4']*phase_hst**3. + p['p5']*phase_hst**4. + 1.0)          	#Simple transit model is baseline flux X transit model
+            	chi2now=np.sum((y-model)**2/err**2)
+            	#print("current chi^2=",chi2now)
+            	return (y-model)/err
+
+        	def model(p):
+            	params.rp = p['rprs'].value            	# Set Batman rprs to new fit rprs
+            	params.t0 = p['t0'].value            	# Set Batman rprs to new fit rprs
+            	m = batman.TransitModel(params, mjd, fac=1E6)   	#initializes model
+            	transit_mjd = m.light_curve(params)    	#Calculates Fine-Grid Tranist model
+            	model=transit_mjd*p['f0'] * (p['p1']*phase + p['p2']*phase_hst + p['p3']*phase_hst**2. + p['p4']*phase_hst**3. + p['p5']*phase_hst**4. + 1.0)              	#Simple transit model is baseline flux X transit model
+            	return model
+
+        	def model_fine(p):
+            	params.rp = p['rprs'].value            	# Set Batman rprs to new fit rprs
+            	params.t0 = p['t0'].value            	# Set Batman rprs to new fit rprs
+            	m = batman.TransitModel(params, t_fine, fac=1E6)   	#initializes model
+            	transit_mjd = m.light_curve(params)    	#Calculates Fine-Grid Tranist model
+            	model_fine=transit_mjd*p['f0']
+            	return model_fine
+
+        	# create Minimizer
+        	mini = lmfit.Minimizer(residual, p, nan_policy='omit')
+        	# first solve with Nelder-Mead
+        	#out1 = mini.minimize(method='Nelder')
+        	# then solve with Levenberg-Marquardt using the
+        	# Nelder-Mead solution as a starting point
+        	# https://lmfit.github.io/lmfit-py/fitting.html
+        	result = mini.minimize(method='leastsq')
+        	#result = mini.minimize(method='leastsq', params=out1.params)
+        	#print(dir(result))  # To View All Atributes of the
+        	#print("redchi",result.redchi)
+        	#print("chi2",result.chisqr)
+        	#print("nfree",result.nfree)
+        	#print("bic",result.bic)
+        	#print("aic",result.aic)
+        	#print("L-M FIT Variable")
+        	#print(lmfit.fit_report(result.params))
+        	#print(p['f0'].value)
+        	# file-output.py
+
+        	#Update with best-fit parameters
+        	p['rprs'].value=result.params['rprs'].value
+        	p['t0'].value=result.params['t0'].value
+        	p['f0'].value=result.params['f0'].value
+        	p['p1'].value=result.params['p1'].value
+        	p['p2'].value=result.params['p2'].value
+        	p['p3'].value=result.params['p3'].value
+        	p['p4'].value=result.params['p4'].value
+        	p['p5'].value=result.params['p5'].value
+        	# Re-calculate Bestfit Model
+        	final_model=model(p)
+        	#final_model_fine=model_fine(p)
+        	#print("residual standard deviation",np.std((y-final_model)/p['f0'].value))
+        	#print("residual standard deviation (ppm)",1E6*np.std((y-final_model)/p['f0'].value))
+        	ppmByRange2[g][h]=ppmByRange2[g][h]+1E6*np.std((y-final_model)/p['f0'].value)
+        	#ppmByRange[g][h]=currentppm
+        	#Plot data models
+        	#matplotlib.pyplot.scatter(mjd,total_counts, linewidth=1.5)
+        	#plt.errorbar(mjd,total_counts,yerr=ApertureRangeError[g-1][h-1], fmt='o')
+        	#xlabel('MJD')
+        	#ylabel('Counts')
+
+        	#overplot models
+        	#plot(t_fine,final_model_fine, linewidth=1.5)        	#overplot fine-grid Transit model
+        	#matplotlib.pyplot.scatter(mjd,final_model, linewidth=2)  #overplot Transit model at data
+
+        	#show()
+        	#Plot Residuals
+        	#matplotlib.pyplot.scatter(mjd,(y-final_model)/p['f0'].value, linewidth=2)  #overplot Transit model at data
+
+        	#show()
+    	h=h+1
+	print(ppmByRange2)
+	g=g+1
+
+
+
+ppmConCat2 = np.concatenate((ppmByRange2[0],ppmByRange2[1],ppmByRange2[2],ppmByRange2[3],ppmByRange2[4],ppmByRange2[5],ppmByRange2[6],ppmByRange2[7],ppmByRange2[8],ppmByRange2[9]), axis=None)
+print(ppmConCat2)
+
+maxvalue = max(ppmConCat2)
+#print(maxvalue)
+Subpixel_min_value1 = min(ppmConCat2)
+Subpixel_min_posn1 = np.argmin(ppmConCat2)
+print(Subpixel_min_value1)
+print(Subpixel_min_posn1)
+
+finalaperture[0]=finalaperture[0]+np.floor(Subpixel_min_posn1/10)/10
+finalaperture[1]=finalaperture[1]+(Subpixel_min_posn1-(np.floor(Subpixel_min_posn1/10)*10))/10
+print(finalaperture)
